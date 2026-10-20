@@ -576,31 +576,70 @@ export const useStore = defineStore('main', {
       await this.loadAll()
     },
 
-    /* ================== СВЯЗИ (админ) ================== */
+          /* ================== СВЯЗИ (админ) ================== */
 
-    async addLink(itemId, targetId) {
-      if (!this.effectiveAdmin) throw new Error('Только админ')
-      const existing = this.links.find(l => l.itemIds.includes(itemId))
-      if (existing) {
-        if (!existing.itemIds.includes(targetId)) {
-          await supabase.from('links')
-            .update({ item_ids: [...existing.itemIds, targetId] }).eq('id', existing.id)
+      async addLink(itemId, targetId) {
+        if (!this.effectiveAdmin) {
+          throw new Error('Только админ может связывать карточки')
         }
-      } else {
-        await supabase.from('links').insert({ item_ids: [itemId, targetId] })
-      }
-      await this.loadAll()
-    },
+        const a = Number(itemId)
+        const b = Number(targetId)
+        if (!Number.isFinite(a) || !Number.isFinite(b) || a === b) {
+          throw new Error('Некорректные id карточек')
+        }
 
-    async removeLink(itemId, targetId) {
-      if (!this.effectiveAdmin) throw new Error('Только админ')
-      const l = this.links.find(x => x.itemIds.includes(itemId))
-      if (!l) return
-      const newIds = l.itemIds.filter(i => i !== targetId)
-      if (newIds.length < 2) await supabase.from('links').delete().eq('id', l.id)
-      else await supabase.from('links').update({ item_ids: newIds }).eq('id', l.id)
-      await this.loadAll()
-    },
+        const existing = this.links.find(l =>
+          (l.itemIds || []).map(Number).includes(a)
+        )
+
+        if (existing) {
+          const ids = (existing.itemIds || []).map(Number)
+          if (!ids.includes(b)) {
+            const { error } = await supabase
+              .from('links')
+              .update({ item_ids: [...ids, b] })
+              .eq('id', existing.id)
+            if (error) throw error
+          }
+        } else {
+          const { error } = await supabase
+            .from('links')
+            .insert({ item_ids: [a, b] })
+          if (error) throw error
+        }
+
+        await this.loadAll()
+      },
+
+      async removeLink(itemId, targetId) {
+        if (!this.effectiveAdmin) throw new Error('Только админ')
+
+        const a = Number(itemId)
+        const b = Number(targetId)
+        if (!Number.isFinite(a) || !Number.isFinite(b)) {
+          throw new Error('Некорректные id карточек')
+        }
+
+        const l = this.links.find(x =>
+          (x.itemIds || []).map(Number).includes(a)
+        )
+        if (!l) return
+
+        const newIds = (l.itemIds || []).map(Number).filter(i => i !== b)
+
+        if (newIds.length < 2) {
+          const { error } = await supabase.from('links').delete().eq('id', l.id)
+          if (error) throw error
+        } else {
+          const { error } = await supabase
+            .from('links')
+            .update({ item_ids: newIds })
+            .eq('id', l.id)
+          if (error) throw error
+        }
+
+        await this.loadAll()
+      },
 
     /* ================== ЧУЖОЙ ПРОФИЛЬ ================== */
 
