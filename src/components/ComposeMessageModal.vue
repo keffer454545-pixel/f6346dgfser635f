@@ -1,6 +1,6 @@
 <script setup>
 import { ref, onMounted } from 'vue'
-import { db } from '../db'
+import { supabase } from '../supabase'
 import { useStore } from '../store'
 
 const emit = defineEmits(['close'])
@@ -9,32 +9,45 @@ const store = useStore()
 const text = ref('')
 const status = ref('')
 const busy = ref(false)
-const admins = ref([])
+const adminExists = ref(false)
 
 async function send() {
   if (!text.value.trim()) return
   busy.value = true
+  status.value = ''
   try {
-    const admin = admins.value[0]
-    if (!admin) throw new Error('Нет администраторов')
-    await db.messages.add({
-      userId: store.currentUser.id,
-      adminId: admin.id,
+    const { data: admins, error: aErr } = await supabase
+      .from('profiles')
+      .select('id')
+      .eq('role', 'admin')
+      .limit(1)
+    if (aErr) throw aErr
+    if (!admins?.length) throw new Error('Нет администраторов')
+
+    const { error } = await supabase.from('messages').insert({
+      user_id: store.currentUser.id,
+      admin_id: admins[0].id,
       text: text.value.trim(),
-      status: 'new',
-      createdAt: Date.now()
+      status: 'new'
     })
+    if (error) throw error
+
     status.value = '✅ Отправлено'
     setTimeout(() => emit('close'), 1000)
   } catch (e) {
-    status.value = '❌ ' + e.message
+    status.value = '❌ ' + (e.message || e)
   } finally {
     busy.value = false
   }
 }
 
 onMounted(async () => {
-  admins.value = await db.users.filter(u => u.role === 'admin').toArray()
+  const { data } = await supabase
+    .from('profiles')
+    .select('id')
+    .eq('role', 'admin')
+    .limit(1)
+  adminExists.value = !!data?.length
 })
 </script>
 
@@ -42,11 +55,20 @@ onMounted(async () => {
   <div class="modal-overlay" @click.self="emit('close')">
     <div class="modal">
       <h3>Написать админу</h3>
-      <textarea v-model="text" placeholder="Например: добавьте, пожалуйста, сериал «Тьма»..." rows="5"></textarea>
+      <textarea
+        v-model="text"
+        placeholder="Например: добавьте, пожалуйста, сериал «Тьма»..."
+        rows="5"
+      ></textarea>
+      <p v-if="!adminExists" class="warn">⚠️ Пока нет ни одного администратора</p>
       <p v-if="status" class="status">{{ status }}</p>
       <div class="actions">
         <button class="btn" @click="emit('close')">Отмена</button>
-        <button class="btn btn-primary" :disabled="busy || !text.trim()" @click="send">
+        <button
+          class="btn btn-primary"
+          :disabled="busy || !text.trim() || !adminExists"
+          @click="send"
+        >
           {{ busy ? '...' : 'Отправить' }}
         </button>
       </div>
@@ -69,4 +91,5 @@ textarea{width:100%;padding:10px 12px;border-radius:8px;border:1px solid var(--b
 .btn-primary{background:var(--status-watching);border-color:var(--status-watching);color:#fff;}
 .btn:disabled{opacity:.5;cursor:not-allowed;}
 .status{font-size:.85rem;margin-top:10px;color:var(--status-watched);}
+.warn{font-size:.82rem;margin-top:8px;color:var(--status-wont-watch);}
 </style>

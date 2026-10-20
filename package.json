@@ -10,7 +10,6 @@
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.118.0",
-    "dexie": "^4.0.0",
     "pinia": "^2.1.0",
     "vue": "^3.4.0"
   },

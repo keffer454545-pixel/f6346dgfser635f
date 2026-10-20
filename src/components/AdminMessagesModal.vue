@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
-import { db } from '../db'
+import { supabase } from '../supabase'
 import { useStore } from '../store'
 import Icon from './Icon.vue'
 
@@ -10,22 +10,47 @@ const store = useStore()
 const messages = ref([])
 const users = ref({})
 const selected = ref(new Set())
+const loading = ref(false)
+const errorMsg = ref('')
 
 const grouped = computed(() => {
   const g = {}
   for (const m of messages.value) {
-    if (!g[m.userId]) g[m.userId] = []
-    g[m.userId].push(m)
+    if (!g[m.user_id]) g[m.user_id] = []
+    g[m.user_id].push(m)
   }
   return g
 })
 const selectedCount = computed(() => selected.value.size)
 
 async function load() {
-  messages.value = await db.messages.orderBy('createdAt').reverse().toArray()
-  const ids = [...new Set(messages.value.map(m => m.userId))]
-  const list = ids.length ? await db.users.where('id').anyOf(ids).toArray() : []
-  users.value = Object.fromEntries(list.map(u => [u.id, u]))
+  loading.value = true
+  errorMsg.value = ''
+  try {
+    const { data: msgs, error } = await supabase
+      .from('messages')
+      .select('*')
+      .order('created_at', { ascending: false })
+    if (error) throw error
+    messages.value = msgs || []
+
+    const ids = [...new Set(messages.value.map(m => m.user_id))]
+    if (ids.length) {
+      const { data: profs, error: pErr } = await supabase
+        .from('profiles')
+        .select('id, username')
+        .in('id', ids)
+      if (pErr) throw pErr
+      users.value = Object.fromEntries((profs || []).map(u => [u.id, u]))
+    } else {
+      users.value = {}
+    }
+  } catch (e) {
+    console.error(e)
+    errorMsg.value = e.message || String(e)
+  } finally {
+    loading.value = false
+  }
 }
 
 function toggle(id) {
@@ -35,26 +60,37 @@ function toggle(id) {
 }
 
 async function accept(id) {
-  await db.messages.update(id, { status: 'accepted' })
+  const { error } = await supabase
+    .from('messages')
+    .update({ status: 'accepted' })
+    .eq('id', id)
+  if (error) { errorMsg.value = error.message; return }
   await load()
 }
+
 async function removeOne(id) {
-  await db.messages.delete(id)
+  const { error } = await supabase.from('messages').delete().eq('id', id)
+  if (error) { errorMsg.value = error.message; return }
   selected.value.delete(id)
   selected.value = new Set(selected.value)
   await load()
 }
+
 async function removeSelected() {
   if (!selected.value.size) return
   if (!confirm(`Удалить ${selected.value.size} сообщений?`)) return
-  for (const id of selected.value) await db.messages.delete(id)
+  const ids = Array.from(selected.value)
+  const { error } = await supabase.from('messages').delete().in('id', ids)
+  if (error) { errorMsg.value = error.message; return }
   selected.value = new Set()
   await load()
 }
+
 async function removeAllFromUser(userId) {
   const name = users.value[userId]?.username || 'пользователя'
   if (!confirm(`Удалить все сообщения от ${name}?`)) return
-  await db.messages.where('userId').equals(userId).delete()
+  const { error } = await supabase.from('messages').delete().eq('user_id', userId)
+  if (error) { errorMsg.value = error.message; return }
   await load()
 }
 
@@ -76,10 +112,13 @@ onMounted(load)
         <button class="btn" @click="emit('close')">Закрыть</button>
       </div>
 
+      <p v-if="loading" class="hint">Загрузка…</p>
+      <p v-if="errorMsg" class="error">{{ errorMsg }}</p>
+
       <div v-for="(list, userId) in grouped" :key="userId" class="user-block">
         <div class="user-head">
           <span class="uname">{{ users[userId]?.username || '—' }}</span>
-          <button class="btn tiny" @click="removeAllFromUser(Number(userId))">
+          <button class="btn tiny" @click="removeAllFromUser(userId)">
             Удалить все его письма
           </button>
         </div>
@@ -92,7 +131,7 @@ onMounted(load)
           <div class="body">
             <div class="text">{{ m.text }}</div>
             <div class="meta">
-              {{ new Date(m.createdAt).toLocaleString() }}
+              {{ new Date(m.created_at).toLocaleString() }}
               <span v-if="m.status === 'accepted'" class="acc">✓ принято</span>
             </div>
           </div>
@@ -103,7 +142,7 @@ onMounted(load)
         </div>
       </div>
 
-      <p v-if="!messages.length" class="hint">Сообщений нет</p>
+      <p v-if="!loading && !messages.length" class="hint">Сообщений нет</p>
     </div>
   </div>
 </template>
@@ -113,9 +152,7 @@ onMounted(load)
   justify-content:center;z-index:400;padding:20px;}
 .modal{background:var(--bg-modal);border:1px solid var(--border);border-radius:var(--radius);
   padding:22px;width:100%;max-width:640px;max-height:88vh;overflow-y:auto;}
-.modal h3{
-  margin-bottom:14px;display:flex;align-items:center;gap:8px;font-size:1.05rem;
-}
+.modal h3{margin-bottom:14px;display:flex;align-items:center;gap:8px;font-size:1.05rem;}
 .bulk{display:flex;gap:8px;margin-bottom:14px;}
 .user-block{margin-bottom:16px;border:1px solid var(--border);border-radius:10px;padding:10px;}
 .user-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;}
@@ -138,4 +175,5 @@ onMounted(load)
 .btn.danger{background:var(--status-wont-watch);border-color:var(--status-wont-watch);color:#fff;}
 .btn.ok{background:var(--status-watched);border-color:var(--status-watched);color:#fff;}
 .hint{text-align:center;color:var(--text-muted);font-size:.85rem;padding:14px;}
+.error{color:var(--status-wont-watch);font-size:.85rem;text-align:center;padding:6px;}
 </style>
