@@ -114,7 +114,7 @@ onMounted(async () => {
 
 /* контейнер: с отступами (как у большинства сайтов) или на всю ширину */
 .container {
-  max-width: 1440px;
+  max-width: 2000px;
   margin: 0 auto;
   width: 100%;
 }

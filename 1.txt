@@ -8,7 +8,7 @@ git status
 git add .
 
 # 3. Закоммитить с сообщением
-git commit -m "fix: сообщения через supabase, RLS, вернул админа"
+git commit -m "fix"
 
 # 4. Запушить в текущую ветку
 git push
