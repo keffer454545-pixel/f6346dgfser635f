@@ -17,3 +17,26 @@ git push
 Если ветка ещё не связана с remote (первый push):
 bash
 git push -u origin main
+
+
+
+-- 1) Перенос user_items (если есть конфликт по уникальному ключу (user_id,item_id) — обновите)
+update user_items
+set item_id = 1036
+where item_id = 399
+  and not exists (
+    select 1 from user_items u2
+    where u2.user_id = user_items.user_id and u2.item_id = 1036
+  );
+-- если остались дубли — решите вручную, какую метку оставить
+
+-- 2) Перенос связей
+update links
+set item_ids = (
+  select array_agg(distinct x)
+  from unnest(array_replace(item_ids, 399, 1036)) x
+)
+where 399 = any(item_ids);
+
+-- 3) Удалить дубль
+delete from items where id = 399;

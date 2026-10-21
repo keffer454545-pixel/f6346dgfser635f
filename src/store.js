@@ -130,9 +130,15 @@ export const useStore = defineStore('main', {
     selectionMode: false,
     currentCategory: 'all',
     currentCollection: null,
-    currentStatuses: [],          // ← мультивыбор статусов
+    currentStatuses: [],          // мультивыбор статусов
     currentSort: 'default',
     searchQuery: '',
+
+    /* Настройки показа карточек */
+    viewMode: 'grid',             // 'grid' | 'list' | 'posters'
+    gridCols: 5,                  // 2..10
+    containerWide: false,         // false = с отступами, true = на всю ширину
+    showViewSettings: false,      // открыта ли панель настроек в Topbar
 
     loading: false,
     lastError: ''
@@ -285,10 +291,16 @@ export const useStore = defineStore('main', {
     /* Связи — getter-функция */
     related(state) {
       return (itemId) => {
-        const direct = state.links.filter(l => l.itemIds.includes(itemId))
+        const id = Number(itemId)
+        const direct = state.links.filter(l =>
+          (l.itemIds || []).map(Number).includes(id)
+        )
         const ids = new Set()
-        direct.forEach(l => l.itemIds.forEach(id => { if (id !== itemId) ids.add(id) }))
-        return state.items.filter(it => ids.has(it.id))
+        direct.forEach(l => (l.itemIds || []).forEach(x => {
+          const n = Number(x)
+          if (n !== id) ids.add(n)
+        }))
+        return state.items.filter(it => ids.has(Number(it.id)))
       }
     }
   },
@@ -303,11 +315,15 @@ export const useStore = defineStore('main', {
       const { data: profile, error } = await supabase
         .from('profiles').select('*').eq('id', user.id).maybeSingle()
 
-      if (error) console.error('loadCurrentUser profile error:', error)
+      if (error) {
+        console.error('loadCurrentUser profile error:', error)
+        throw new Error('Не удалось загрузить профиль: ' + error.message)
+      }
 
+      // Профиля нет — создаём (fallback, если триггер не сработал)
       if (!profile) {
         const fallbackUsername = user.email?.split('@')[0] || 'user'
-        const { data: newProfile } = await supabase
+        const { data: created, error: insErr } = await supabase
           .from('profiles')
           .insert({
             id: user.id,
@@ -317,11 +333,14 @@ export const useStore = defineStore('main', {
             banned: false,
             hidden: false
           })
-          .select().single()
-        this.currentUser = newProfile
-          ? { ...newProfile, email: user.email }
-          : { id: user.id, username: fallbackUsername, role: 'user',
-              super_admin: false, banned: false, hidden: false, email: user.email }
+          .select()
+          .single()
+
+        if (insErr) {
+          console.error('loadCurrentUser insert error:', insErr)
+          throw new Error('Профиль не найден и не создан: ' + insErr.message)
+        }
+        this.currentUser = { ...created, email: user.email }
       } else {
         this.currentUser = { ...profile, email: user.email }
       }
@@ -338,6 +357,7 @@ export const useStore = defineStore('main', {
     async afterLogin() {
       this.adminViewMode = 'admin'
       await this.loadCurrentUser()
+      this.loadViewPrefs()
       await this.loadAll()
     },
 
@@ -352,6 +372,35 @@ export const useStore = defineStore('main', {
       this.selected = new Set()
       this.selectionMode = false
       this.closeUserProfile()
+    },
+
+    /* ================== НАСТРОЙКИ ПОКА ================== */
+
+    saveViewPrefs() {
+      try {
+        localStorage.setItem('view_prefs', JSON.stringify({
+          viewMode: this.viewMode,
+          gridCols: this.gridCols,
+          containerWide: this.containerWide
+        }))
+      } catch {}
+    },
+
+    loadViewPrefs() {
+      try {
+        const raw = localStorage.getItem('view_prefs')
+        if (!raw) return
+        const p = JSON.parse(raw)
+        if (p.viewMode === 'grid' || p.viewMode === 'list' || p.viewMode === 'posters') {
+          this.viewMode = p.viewMode
+        }
+        if (Number.isInteger(p.gridCols) && p.gridCols >= 2 && p.gridCols <= 10) {
+          this.gridCols = p.gridCols
+        }
+        if (typeof p.containerWide === 'boolean') {
+          this.containerWide = p.containerWide
+        }
+      } catch {}
     },
 
     /* ================== ЗАГРУЗКА ================== */
@@ -576,70 +625,70 @@ export const useStore = defineStore('main', {
       await this.loadAll()
     },
 
-          /* ================== СВЯЗИ (админ) ================== */
+    /* ================== СВЯЗИ (админ) ================== */
 
-      async addLink(itemId, targetId) {
-        if (!this.effectiveAdmin) {
-          throw new Error('Только админ может связывать карточки')
-        }
-        const a = Number(itemId)
-        const b = Number(targetId)
-        if (!Number.isFinite(a) || !Number.isFinite(b) || a === b) {
-          throw new Error('Некорректные id карточек')
-        }
+    async addLink(itemId, targetId) {
+      if (!this.effectiveAdmin) {
+        throw new Error('Только админ может связывать карточки')
+      }
+      const a = Number(itemId)
+      const b = Number(targetId)
+      if (!Number.isFinite(a) || !Number.isFinite(b) || a === b) {
+        throw new Error('Некорректные id карточек')
+      }
 
-        const existing = this.links.find(l =>
-          (l.itemIds || []).map(Number).includes(a)
-        )
+      const existing = this.links.find(l =>
+        (l.itemIds || []).map(Number).includes(a)
+      )
 
-        if (existing) {
-          const ids = (existing.itemIds || []).map(Number)
-          if (!ids.includes(b)) {
-            const { error } = await supabase
-              .from('links')
-              .update({ item_ids: [...ids, b] })
-              .eq('id', existing.id)
-            if (error) throw error
-          }
-        } else {
+      if (existing) {
+        const ids = (existing.itemIds || []).map(Number)
+        if (!ids.includes(b)) {
           const { error } = await supabase
             .from('links')
-            .insert({ item_ids: [a, b] })
+            .update({ item_ids: [...ids, b] })
+            .eq('id', existing.id)
           if (error) throw error
         }
+      } else {
+        const { error } = await supabase
+          .from('links')
+          .insert({ item_ids: [a, b] })
+        if (error) throw error
+      }
 
-        await this.loadAll()
-      },
+      await this.loadAll()
+    },
 
-      async removeLink(itemId, targetId) {
-        if (!this.effectiveAdmin) throw new Error('Только админ')
+    async removeLink(itemId, targetId) {
+      if (!this.effectiveAdmin) throw new Error('Только админ')
 
-        const a = Number(itemId)
-        const b = Number(targetId)
-        if (!Number.isFinite(a) || !Number.isFinite(b)) {
-          throw new Error('Некорректные id карточек')
-        }
+      const a = Number(itemId)
+      const b = Number(targetId)
+      if (!Number.isFinite(a) || !Number.isFinite(b)) {
+        throw new Error('Некорректные id карточек')
+      }
 
-        const l = this.links.find(x =>
-          (x.itemIds || []).map(Number).includes(a)
-        )
-        if (!l) return
+      const l = this.links.find(x =>
+        (x.itemIds || []).map(Number).includes(a)
+      )
+      if (!l) return
 
-        const newIds = (l.itemIds || []).map(Number).filter(i => i !== b)
+      const newIds = (l.itemIds || []).map(Number).filter(i => i !== b)
 
-        if (newIds.length < 2) {
-          const { error } = await supabase.from('links').delete().eq('id', l.id)
-          if (error) throw error
-        } else {
-          const { error } = await supabase
-            .from('links')
-            .update({ item_ids: newIds })
-            .eq('id', l.id)
-          if (error) throw error
-        }
+      if (newIds.length < 2) {
+        const { error } = await supabase.from('links').delete().eq('id', l.id)
+        if (error) throw error
+      } else {
+        const { error } = await supabase
+          .from('links')
+          .update({ item_ids: newIds })
+          .eq('id', l.id)
+        if (error) throw error
+      }
 
-        await this.loadAll()
-      },
+      await this.loadAll()
+    },
 
     /* ================== ЧУЖОЙ ПРОФИЛЬ ================== */
 
@@ -877,7 +926,7 @@ export const useStore = defineStore('main', {
     },
 
     async setWatchedEpisodes(itemId, newWatched) {
-      if (this.viewingUserId) return
+      if (this.viewingUserId) return     
       const id = Number(itemId)
       const item = this.items.find(i => i.id === id)
       if (!item) return
