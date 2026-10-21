@@ -137,6 +137,7 @@ export const useStore = defineStore('main', {
     /* Настройки показа карточек */
     viewMode: 'grid',             // 'grid' | 'list' | 'posters'
     gridCols: 5,                  // 2..10
+    autoCols: false,              // авто-подстройка количества плиток
     containerWide: false,         // false = с отступами, true = на всю ширину
     showViewSettings: false,      // открыта ли панель настроек в Topbar
 
@@ -376,11 +377,12 @@ export const useStore = defineStore('main', {
 
     /* ================== НАСТРОЙКИ ПОКА ================== */
 
-    saveViewPrefs() {
+        saveViewPrefs() {
       try {
         localStorage.setItem('view_prefs', JSON.stringify({
           viewMode: this.viewMode,
           gridCols: this.gridCols,
+          autoCols: this.autoCols,
           containerWide: this.containerWide
         }))
       } catch {}
@@ -397,6 +399,7 @@ export const useStore = defineStore('main', {
         if (Number.isInteger(p.gridCols) && p.gridCols >= 2 && p.gridCols <= 10) {
           this.gridCols = p.gridCols
         }
+        if (typeof p.autoCols === 'boolean') this.autoCols = p.autoCols
         if (typeof p.containerWide === 'boolean') {
           this.containerWide = p.containerWide
         }

@@ -24,8 +24,12 @@ const settingsWrap = ref(null)
 function toggleViewSettings() {
   store.showViewSettings = !store.showViewSettings
 }
-function setMode(mode) { store.viewMode = mode }
-function setCols(n) { if (n >= 2 && n <= 10) store.gridCols = n }
+function setMode(mode) {
+  store.viewMode = mode
+}
+function setCols(n) {
+  if (n >= 2 && n <= 10) store.gridCols = n
+}
 
 // закрытие поповера по клику вне
 function onDocClick(e) {
@@ -37,8 +41,9 @@ function onDocClick(e) {
 onMounted(() => document.addEventListener('click', onDocClick))
 onUnmounted(() => document.removeEventListener('click', onDocClick))
 
+// сохраняем настройки при изменении
 watch(
-  () => [store.viewMode, store.gridCols, store.containerWide],
+  () => [store.viewMode, store.gridCols, store.autoCols, store.containerWide],
   () => { try { store.saveViewPrefs?.() } catch {} }
 )
 </script>
@@ -79,6 +84,7 @@ watch(
         </button>
 
         <div v-if="store.showViewSettings" class="view-popover" @click.stop>
+          <!-- режим отображения -->
           <div class="pop-row">
             <button
               class="icon-btn"
@@ -106,26 +112,40 @@ watch(
             </button>
           </div>
 
+          <!-- авто / ручное количество -->
           <div class="pop-row cols-row">
             <button
               class="icon-btn"
-              title="Меньше плиток"
-              :disabled="store.gridCols <= 2"
-              @click="setCols(store.gridCols - 1)"
+              :class="{ active: store.autoCols }"
+              title="Авто (подстраивать под ширину окна)"
+              @click="store.autoCols = !store.autoCols"
             >
-              <Icon name="minus" :size="16" />
+              <Icon name="auto" :size="18" />
             </button>
-            <span class="cols-val">{{ store.gridCols }}</span>
-            <button
-              class="icon-btn"
-              title="Больше плиток"
-              :disabled="store.gridCols >= 10"
-              @click="setCols(store.gridCols + 1)"
-            >
-              <Icon name="plus" :size="16" />
-            </button>
+
+            <template v-if="!store.autoCols">
+              <button
+                class="icon-btn"
+                title="Меньше плиток"
+                :disabled="store.gridCols <= 2"
+                @click="setCols(store.gridCols - 1)"
+              >
+                <Icon name="minus" :size="16" />
+              </button>
+              <span class="cols-val">{{ store.gridCols }}</span>
+              <button
+                class="icon-btn"
+                title="Больше плиток"
+                :disabled="store.gridCols >= 10"
+                @click="setCols(store.gridCols + 1)"
+              >
+                <Icon name="plus" :size="16" />
+              </button>
+            </template>
+            <span v-else class="auto-hint">авто</span>
           </div>
 
+          <!-- ширина контейнера -->
           <div class="pop-row">
             <button
               class="icon-btn wide"
@@ -196,123 +216,254 @@ watch(
 
 <style scoped>
 /* ---- Полоса целиком ---- */
-.topbar{
-  display:flex;
-  align-items:center;
-  gap:12px;
-  margin-bottom:8px;
-  width:100%;
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
+  width: 100%;
 }
 
 /* ---- Левая половина: поиск по центру своей зоны ---- */
-.left{
-  flex:1 1 0;
-  min-width:0;
-  display:flex;
-  justify-content:center;   /* поиск по центру левой половины */
+.left {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  justify-content: center;
 }
-.search-box{
-  position:relative;
-  display:flex;
-  align-items:center;
-  width:100%;
-  max-width:420px;           /* не растягивается на всю половину */
+.search-box {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+  max-width: 420px;
 }
-.search-icon{
-  position:absolute;left:14px;color:var(--text-muted);pointer-events:none;
+.search-icon {
+  position: absolute;
+  left: 14px;
+  color: var(--text-muted);
+  pointer-events: none;
 }
-.search-box input{
-  width:100%;
-  padding:10px 34px 10px 38px;
-  border-radius:30px;
-  border:1px solid var(--border);
-  background:var(--bg-card);
-  color:var(--text-primary);
-  font-size:.9rem;
-  outline:none;
-  font-family:inherit;
-  transition:var(--transition);
+.search-box input {
+  width: 100%;
+  padding: 10px 34px 10px 38px;
+  border-radius: 30px;
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+  color: var(--text-primary);
+  font-size: 0.9rem;
+  outline: none;
+  font-family: inherit;
+  transition: var(--transition);
 }
-.search-box input:focus{border-color:var(--status-watching);}
-.clear-btn{
-  position:absolute;right:8px;top:50%;transform:translateY(-50%);
-  width:22px;height:22px;border-radius:50%;border:none;background:transparent;
-  color:var(--text-muted);display:flex;align-items:center;justify-content:center;
-  cursor:pointer;padding:0;
+.search-box input:focus {
+  border-color: var(--status-watching);
 }
-.clear-btn:hover{color:var(--text-primary);background:rgba(255,255,255,.08);}
+.clear-btn {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+}
+.clear-btn:hover {
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.08);
+}
 
 /* ---- Правая половина: всё прижато вправо ---- */
-.right{
-  flex:0 0 auto;
-  display:flex;
-  align-items:center;
-  gap:8px;
-  margin-left:auto;          /* прижимает группу вправо */
+.right {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
 }
 
 /* ---- Кнопки ---- */
-.btn{
-  display:inline-flex;align-items:center;gap:6px;padding:10px 14px;border-radius:30px;
-  border:1px solid var(--border);background:var(--bg-card);color:var(--text-primary);
-  font-size:.85rem;cursor:pointer;font-family:inherit;white-space:nowrap;
-  transition:var(--transition);
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 14px;
+  border-radius: 30px;
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+  color: var(--text-primary);
+  font-size: 0.85rem;
+  cursor: pointer;
+  font-family: inherit;
+  white-space: nowrap;
+  transition: var(--transition);
 }
-.btn:hover{background:var(--bg-card-hover);}
-.btn.mini{padding:9px 11px;}
-.btn.icon-only{padding:9px;gap:0;}
-.btn.active,.btn.mini.active{
-  background:var(--status-watching);border-color:var(--status-watching);color:#fff;
+.btn:hover {
+  background: var(--bg-card-hover);
 }
-.btn-primary{background:var(--status-watching);border-color:var(--status-watching);color:#fff;}
+.btn.mini {
+  padding: 9px 11px;
+}
+.btn.icon-only {
+  padding: 9px;
+  gap: 0;
+}
+.btn.active,
+.btn.mini.active {
+  background: var(--status-watching);
+  border-color: var(--status-watching);
+  color: #fff;
+}
+.btn-primary {
+  background: var(--status-watching);
+  border-color: var(--status-watching);
+  color: #fff;
+}
 
 /* ---- Панель настроек ---- */
-.view-settings-wrap{position:relative;flex-shrink:0;}
-.view-popover{
-  position:absolute;top:calc(100% + 6px);right:0;z-index:40;
-  background:var(--bg-modal);border:1px solid var(--border);border-radius:12px;
-  padding:8px;box-shadow:var(--shadow-hover);display:flex;flex-direction:column;gap:6px;
-  min-width:180px;
+.view-settings-wrap {
+  position: relative;
+  flex-shrink: 0;
 }
-.pop-row{display:flex;align-items:center;justify-content:center;gap:6px;}
-.icon-btn{
-  width:36px;height:36px;border-radius:8px;border:1px solid var(--border);
-  background:var(--bg-card);color:var(--text-secondary);cursor:pointer;
-  display:flex;align-items:center;justify-content:center;padding:0;
+.view-popover {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 40;
+  background: var(--bg-modal);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 8px;
+  box-shadow: var(--shadow-hover);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 180px;
 }
-.icon-btn:hover{background:var(--bg-card-hover);color:var(--text-primary);}
-.icon-btn.active{background:var(--status-watching);border-color:var(--status-watching);color:#fff;}
-.icon-btn:disabled{opacity:.4;cursor:not-allowed;}
-.icon-btn.wide{width:100%;}
-.cols-row{gap:8px;}
-.cols-val{min-width:20px;text-align:center;font-weight:700;font-size:.9rem;}
+.pop-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+.icon-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+.icon-btn:hover {
+  background: var(--bg-card-hover);
+  color: var(--text-primary);
+}
+.icon-btn.active {
+  background: var(--status-watching);
+  border-color: var(--status-watching);
+  color: #fff;
+}
+.icon-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.icon-btn.wide {
+  width: 100%;
+}
+.cols-row {
+  gap: 8px;
+}
+.cols-val {
+  min-width: 20px;
+  text-align: center;
+  font-weight: 700;
+  font-size: 0.9rem;
+}
+.auto-hint {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  padding: 0 6px;
+}
 
 /* ---- Аватар ---- */
-.avatar{
-  width:40px;height:40px;border-radius:50%;
-  background:var(--status-watching);color:#fff;font-weight:700;font-size:1rem;
-  border:none;cursor:pointer;flex-shrink:0;font-family:inherit;
+.avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: var(--status-watching);
+  color: #fff;
+  font-weight: 700;
+  font-size: 1rem;
+  border: none;
+  cursor: pointer;
+  flex-shrink: 0;
+  font-family: inherit;
 }
-.avatar:hover{transform:scale(1.05);}
+.avatar:hover {
+  transform: scale(1.05);
+}
 
 /* ---- Чужой профиль ---- */
-.viewing-name{
-  display:inline-flex;align-items:center;gap:6px;
-  font-size:.85rem;color:var(--text-secondary);
-  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:200px;
+.viewing-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 200px;
 }
-.name-text{overflow:hidden;text-overflow:ellipsis;}
+.name-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 
-@media (max-width:860px){
-  .topbar{gap:8px;}
-  .left{justify-content:flex-start;}
-  .search-box{max-width:none;}
+@media (max-width: 860px) {
+  .topbar {
+    gap: 8px;
+  }
+  .left {
+    justify-content: flex-start;
+  }
+  .search-box {
+    max-width: none;
+  }
 }
-@media (max-width:640px){
-  .search-box input{padding:9px 30px 9px 32px;font-size:.85rem;}
-  .search-icon{left:11px;}
-  .btn{padding:9px 11px;}
-  .viewing-name{max-width:100px;font-size:.78rem;}
-  .avatar{width:36px;height:36px;}
+@media (max-width: 640px) {
+  .search-box input {
+    padding: 9px 30px 9px 32px;
+    font-size: 0.85rem;
+  }
+  .search-icon {
+    left: 11px;
+  }
+  .btn {
+    padding: 9px 11px;
+  }
+  .viewing-name {
+    max-width: 100px;
+    font-size: 0.78rem;
+  }
+  .avatar {
+    width: 36px;
+    height: 36px;
+  }
 }
 </style>

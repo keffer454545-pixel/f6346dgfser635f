@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, ref, computed } from 'vue'
+import { onMounted, onUnmounted, ref, computed } from 'vue'
 import { useStore } from './store'
 import Topbar from './components/Topbar.vue'
 import NavBar from './components/NavBar.vue'
@@ -29,12 +29,58 @@ function openItem(item) {
 function closeTop() { viewStack.value.pop() }
 function closeAll() { viewStack.value = [] }
 
-// динамические CSS-переменные для сетки
-const gridStyle = computed(() => {
-  if (store.viewMode === 'list') {
-    return { '--cols': 1 }
+/* ---------- Адаптивное количество колонок ---------- */
+
+const winWidth = ref(typeof window !== 'undefined' ? window.innerWidth : 1200)
+
+function onResize() {
+  winWidth.value = window.innerWidth
+}
+onMounted(() => {
+  window.addEventListener('resize', onResize, { passive: true })
+})
+onUnmounted(() => {
+  window.removeEventListener('resize', onResize)
+})
+
+// Минимальная ширина одной плитки (px) для авто-режима
+function tileMinForWidth(w) {
+  if (w < 480) return 70      // телефон: до 4–5 плиток
+  if (w < 768) return 120     // планшет портрет
+  if (w < 1200) return 160    // планшет/небольшой десктоп
+  return 200                  // десктоп
+}
+
+// Сколько плиток максимум влезает при данной ширине
+function maxColsForWidth(w) {
+  const tileMin = tileMinForWidth(w)
+  // контейнер: wide -> вся ширина минус padding, иначе max-width 2000
+  const containerMax = store.containerWide ? w : Math.min(w, 2000)
+  const padding = w < 640 ? 28 : 48           // .main padding слева+справа
+  const inner = Math.max(240, containerMax - padding)
+  const gap = w < 640 ? 10 : (w < 860 ? 12 : 24)
+  // подбор: cols * tile + (cols-1)*gap <= inner
+  let cols = Math.floor((inner + gap) / (tileMin + gap))
+  return Math.max(2, Math.min(10, cols))
+}
+
+// Эффективное количество колонок
+const effectiveCols = computed(() => {
+  // список всегда 1 колонка
+  if (store.viewMode === 'list') return 1
+  // авто-режим: считаем по ширине
+  if (store.autoCols) {
+    return maxColsForWidth(winWidth.value)
   }
-  return { '--cols': store.gridCols }
+  // ручной режим
+  const manual = Math.max(2, Math.min(10, store.gridCols || 5))
+  // защита от «10 плиток на телефоне» — ограничиваем физически влезающим числом
+  const cap = maxColsForWidth(winWidth.value)
+  return Math.min(manual, cap)
+})
+
+const gridStyle = computed(() => {
+  return { '--cols': effectiveCols.value }
 })
 
 onMounted(async () => {
@@ -112,7 +158,6 @@ onMounted(async () => {
   width: 100%;
 }
 
-/* контейнер: с отступами (как у большинства сайтов) или на всю ширину */
 .container {
   max-width: 2000px;
   margin: 0 auto;
@@ -122,14 +167,13 @@ onMounted(async () => {
   max-width: 100%;
 }
 
-/* сетка */
+/* сетка — только через --cols, без !important */
 .grid {
   display: grid;
   grid-template-columns: repeat(var(--cols, 5), minmax(0, 1fr));
   gap: 24px;
 }
 
-/* список — одна колонка */
 .grid.grid-list {
   grid-template-columns: 1fr;
   gap: 12px;
@@ -137,7 +181,6 @@ onMounted(async () => {
   margin: 0 auto;
 }
 
-/* без надписей — та же сетка, но без info */
 .grid.grid-posters {
   grid-template-columns: repeat(var(--cols, 5), minmax(0, 1fr));
 }
@@ -159,8 +202,7 @@ onMounted(async () => {
   .main { padding: 12px 14px 100px; }
   .grid { gap: 12px; }
 }
-@media (max-width: 480px) {
-  /* на очень узких экранах принудительно 2 колонки в grid/posters */
-  .grid:not(.grid-list) { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+@media (max-width: 640px) {
+  .grid { gap: 10px; }
 }
 </style>
