@@ -1,0 +1,2 @@
+[alias]
+    ship = "!f() { msg=\"${1:-fix}\"; git status && git add . && (git commit -m \"$msg\" || true) && git push; }; f"
